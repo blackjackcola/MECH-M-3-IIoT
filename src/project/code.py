@@ -14,6 +14,20 @@
 # ----------- Bibliotheken importieren -----------
 # Hier werden später alle benötigten CircuitPython-Bibliotheken importiert
 # z.B. import board, time, wifi, adafruit_dht, etc.
+import time
+import board
+import digitalio
+import wifi
+import adafruit_dht
+import adafruit_ntp
+import toml
+import microcontroller
+import socketpool
+import adafruit_minimqtt.adafruit_minimqtt as MQTT
+import select
+import json
+import rtc
+
 
 
 # ===================================================================
@@ -25,30 +39,25 @@ class ConfigManager:
     """
 
     def __init__(self, filepath: str):
-        """
-        Initialisiert den ConfigManager.
-
-        :param filepath: Der Pfad zur Konfigurationsdatei (z.B. "settings.toml").
-        """
-        pass
+        self.filepath = filepath
 
     def load_settings(self) -> dict:
-        """
-        Lädt die Einstellungen aus der TOML-Datei.
-
-        :return: Ein Dictionary mit allen geladenen Einstellungen.
-        """
-        pass
+        try:
+            with open(self.filepath, "r") as f:
+                data = toml.load(f)
+            return data
+        except Exception as e:
+            print(f"Fehler beim Laden der settings: {e}")
+            return {}
 
     def save_settings(self, settings: dict):
-        """
-        Speichert Änderungen zurück in die TOML-Datei und startet den
-        Mikrocontroller neu, um die neuen Einstellungen zu übernehmen.
-
-        :param settings: Das Dictionary mit den zu speichernden Einstellungen.
-        """
-        pass
-
+        try:
+            with open(self.filepath, "w") as f:
+                toml.dump(settings, f)
+            print("Einstellungen gespeichert, Neustart...")
+            microcontroller.reset()
+        except Exception as e:
+            print(f"Fehler beim Speichern: {e}")
 
 # ===================================================================
 # KLASSE: NetworkManager
@@ -59,22 +68,37 @@ class NetworkManager:
     """
 
     def __init__(self, ssid: str, password: str):
-        """
-        Initialisiert den NetworkManager mit den WLAN-Zugangsdaten.
-
-        :param ssid: Der Name des WLAN-Netzwerks (SSID).
-        :param password: Das Passwort für das WLAN-Netzwerk.
-        """
-        pass
+        self.ssid = ssid
+        self.password = password
+        self.pool = None
 
     def connect(self) -> bool:
-        """
-        Stellt die Verbindung zum WLAN her. Versucht es bei einem Fehler
-        mehrfach, bevor aufgegeben wird.
+        print(f"Verbinde mit WLAN: {self.ssid}")
+        retries = 5
+        for _ in range(retries):
+            try:
+                wifi.radio.connect(self.ssid, self.password)
+                self.pool = socketpool.SocketPool(wifi.radio)
+                print("WLAN verbunden")
+                return True
+            except Exception as e:
+                print(f"Fehler bei WLAN-Verbindung: {e}")
+                time.sleep(2)
+        print("WLAN Verbindung fehlgeschlagen")
+        return False
 
-        :return: True bei erfolgreicher Verbindung, ansonsten False.
-        """
-        pass
+    def is_connected(self) -> bool:
+        try:
+            return wifi.radio.connected
+        except Exception:
+            return False
+
+    def get_ip(self) -> str:
+        try:
+            return wifi.radio.ipv4_address
+        except Exception:
+            return "0.0.0.0"
+
 
     def is_connected(self) -> bool:
         """
@@ -96,28 +120,22 @@ class NetworkManager:
 # ===================================================================
 # KLASSE: Sensor
 # ===================================================================
-class Sensor:
     """
     Kapselt die Logik zum Auslesen des DHT22-Sensors.
     """
 
     def __init__(self, pin_number: int):
-        """
-        Initialisiert den Sensor am angegebenen GPIO-Pin.
-
-        :param pin_number: Die Nummer des GPIO-Pins (z.B. 15 für GP15).
-        """
-        pass
+        self.dht = adafruit_dht.DHT22(getattr(board, f"GP{pin_number}"))
 
     def read_data(self) -> dict | None:
-        """
-        Liest Temperatur und Luftfeuchtigkeit vom Sensor.
-
-        :return: Ein Dictionary wie {'temperature': 22.5, 'humidity': 45.8}
-                 oder None, falls das Auslesen fehlschlägt.
-        """
-        pass
-
+        try:
+            temperature = self.dht.temperature
+            humidity = self.dht.humidity
+            if humidity is not None:
+                return {"humidity": humidity}
+            return None
+        except Exception:
+            return None
 
 # ===================================================================
 # KLASSE: MqttClient
