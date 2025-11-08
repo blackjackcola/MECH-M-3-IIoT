@@ -5,7 +5,7 @@
 # Datum: 02.09.2025
 #
 # Hardware: Raspberry Pi Pico W
-# Sensor: DHT22 (Temperatur & Luftfeuchtigkeit)
+# Sensor: DHT11 (Temperatur & Luftfeuchtigkeit)
 # Software: CircuitPython
 # ===================================================================
 
@@ -22,6 +22,7 @@ import toml
 import microcontroller
 import rtc
 import json
+import select
 
 # ===================================================================
 # KLASSE: ConfigManager
@@ -77,7 +78,7 @@ class NetworkManager:
 
 class Sensor:
     def __init__(self, pin_number: int):
-        self.dht = adafruit_dht.DHT22(getattr(board, f"GP{pin_number}"))
+        self.dht = adafruit_dht.DHT11(getattr(board, f"GP{pin_number}"))
 
     def read_data(self) -> dict | None:
         try:
@@ -92,17 +93,19 @@ class Sensor:
 # ===================================================================
 # KLASSE: MqttClient
 # ===================================================================
+
+
 class MqttClient:
-    def __init__(self, config: dict, pool):
-        mqtt_conf = config["mqtt"]
-        self.topic = mqtt_conf.get("topic", "yourmuesli/env")
+    def __init__(self, broker, port, username, password, client_id, base_topic, pool):
+        self.topic = base_topic or "iiot/test"
         self.client = MQTT.MQTT(
-            broker=mqtt_conf["broker"],
-            port=int(mqtt_conf.get("port", 1883)),
-            username=mqtt_conf.get("username", ""),
-            password=mqtt_conf.get("password", ""),
+            broker=broker,
+            port=port,
+            username=username,
+            password=password,
             socket_pool=pool,
         )
+        self.client_id = client_id
 
     def connect(self):
         print("Verbinde mit MQTT...")
@@ -129,10 +132,19 @@ def main():
 
     # Konfiguration laden
     cfg = ConfigManager("settings.toml").load_settings()
-    ssid = cfg["wifi"]["ssid"]
-    password = cfg["wifi"]["password"]
-    pin = int(cfg["sensor"]["pin"])
-    interval = int(cfg["app"]["reading_interval_seconds"])
+
+    ssid = cfg.get("CIRCUITPY_WIFI_SSID", "")
+    password = cfg.get("CIRCUITPY_WIFI_PASSWORD", "")
+
+    broker = cfg.get("MQTT_BROKER", "")
+    port = int(cfg.get("MQTT_PORT", 1883))
+    username = cfg.get("MQTT_USER", "")
+    mqtt_password = cfg.get("MQTT_PASSWORD", "")
+    client_id = cfg.get("MQTT_CLIENT_ID", "")
+    base_topic = cfg.get("MQTT_BASE_TOPIC", "")
+
+    interval = int(cfg.get("READING_INTERVAL_SECONDS", 30))
+    pin = 15  # DHT22 pin (example)
 
     # WLAN verbinden
     net = NetworkManager(ssid, password)
@@ -151,7 +163,7 @@ def main():
 
     # Sensor & MQTT
     sensor = Sensor(pin)
-    mqtt = MqttClient(cfg, pool)
+    mqtt = MqttClient(broker, port, username, mqtt_password, client_id, base_topic, pool)
     mqtt.connect()
 
     print("Starte Hauptschleife...")
@@ -173,7 +185,6 @@ def main():
         time.sleep(0.1)
 
 
-# Programm starten
 try:
     main()
 except Exception as e:
