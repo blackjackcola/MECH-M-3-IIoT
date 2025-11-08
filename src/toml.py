@@ -15,8 +15,10 @@ def loads(s):
         data[key] = value
     return data
 
+
 def load(f):
     return loads(f.read())
+
 
 def dumps(data):
     out = []
