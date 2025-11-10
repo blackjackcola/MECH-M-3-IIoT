@@ -144,7 +144,7 @@ def main():
     base_topic = cfg.get("MQTT_BASE_TOPIC", "")
 
     interval = int(cfg.get("READING_INTERVAL_SECONDS", 30))
-    pin = 15  # DHT22 pin (example)
+    pin = 22    # GPIO Pin für DHT11
 
     # WLAN verbinden
     net = NetworkManager(ssid, password)
