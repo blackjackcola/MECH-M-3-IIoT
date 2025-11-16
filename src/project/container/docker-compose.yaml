@@ -1,0 +1,40 @@
+version: "3.9"
+
+services:
+  influxdb:
+    image: influxdb:2.7
+    container_name: influxdb
+    restart: unless-stopped
+    ports:
+      - "8086:8086"
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: iot
+      DOCKER_INFLUXDB_INIT_PASSWORD: iot12345
+      DOCKER_INFLUXDB_INIT_ORG: yourmuesli.at
+      DOCKER_INFLUXDB_INIT_BUCKET: iot_monitoring
+      DOCKER_INFLUXDB_INIT_BUCKET_RETENTION: 0
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: GDLNye48_RhcT6Y1qKl4AjY7zm01XiHDpp9ijQM7fx9JHboygB9fWmtg-e_sjxEvb4Az3CjcdR7ENzBsebabdQ==  
+    volumes:
+      - ./data/influxdb:/var/lib/influxdb2
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      - influxdb
+    volumes:
+      - ./data/grafana:/var/lib/grafana
+
+  telegraf:
+    image: telegraf:latest
+    container_name: telegraf
+    restart: unless-stopped
+    depends_on:
+      - influxdb
+    volumes:
+      - ./telegraf.conf:/etc/telegraf/telegraf.conf:ro
+
