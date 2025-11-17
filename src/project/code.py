@@ -114,9 +114,13 @@ class Sensor:
 class MqttClient:
     def __init__(self, broker, port, username, password, client_id, base_topic, pool):
         self.client_id = client_id or "pico-w"
+        self.device_id = self.client_id  # oder aus cfg lesen und hier übergeben
         self.base = (base_topic or "iiot/test").rstrip("/")
-        self.topic_telemetry = f"{self.base}/{self.client_id}/Daten"
-        self.topic_status    = f"{self.base}/{self.client_id}/status"
+
+        # neue Topics:
+        self.topic_status = f"{self.base}/{self.client_id}/status"
+        self.topic_temp   = f"{self.base}/{self.client_id}/temperature"
+        self.topic_hum    = f"{self.base}/{self.client_id}/humidity"
 
         # TLS optional: wenn dein Broker TLS verlangt, setze use_ssl=True und passenden Port (z.B. 8883)
         use_ssl = (port == 8883)
@@ -134,7 +138,12 @@ class MqttClient:
         )
 
         # Last Will: wenn Verbindung abbricht → offline
-        self.client.will_set(self.topic_status, "offline", retain=True, qos=1)
+        will_payload = json.dumps({
+            "device_id": self.device_id,
+            "status": "offline",
+            "timestamp": iso_utc(),  # Zeitpunkt der Verbindung
+        })
+        self.client.will_set(self.topic_status, will_payload, retain=True, qos=1)
 
         # optionale Callback-Logs
         self.client.on_connect = lambda client, userdata, flags, rc: print("MQTT connected, rc=", rc)
@@ -143,14 +152,32 @@ class MqttClient:
     def connect(self):
         print("Verbinde mit MQTT…")
         self.client.connect()
-        # Online-Flag setzen
-        self.client.publish(self.topic_status, "online", retain=True, qos=1)
+        online_payload = json.dumps({
+            "device_id": self.device_id,
+            "status": "online",
+            "timestamp": iso_utc(),
+        })
+        self.client.publish(self.topic_status, online_payload, retain=True, qos=1)
         print("MQTT verbunden. Status 'online' publiziert.")
 
-    def publish_telemetry(self, payload: dict):
-        msg = json.dumps(payload)
-        self.client.publish(self.topic_telemetry, msg, qos=1, retain=False)
-        print("Daten gesendet →", self.topic_telemetry, msg)
+    def publish_telemetry(self, t: float, h: float):
+        ts = iso_utc()
+        temp_msg = json.dumps({
+            "device_id": self.device_id,
+            "unit": "°C",
+            "value": f"{t:.1f}",        # als String, wie von dir gewünscht
+            "timestamp": ts,
+        })
+        hum_msg = json.dumps({
+            "device_id": self.device_id,
+            "unit": "%",
+            "value": f"{h:.0f}",        # ganze %, bei Bedarf auf .1f ändern
+            "timestamp": ts,
+        })
+        self.client.publish(self.topic_temp, temp_msg, qos=1, retain=False)
+        self.client.publish(self.topic_hum, hum_msg, qos=1, retain=False)
+        print("TEMP →", self.topic_temp, temp_msg)
+        print("HUM  →", self.topic_hum, hum_msg)
 
     def loop(self, timeout: float = 0.5):
         # Regelmäßig aufrufen; hält Verbindung und verarbeitet acks
@@ -373,16 +400,8 @@ def main():
                 last = now
                 data = sensor.read_data()
                 if data:
-                    payload = {
-                        # "client_id": client_id,
-                        # "ip": net.get_ip(),
-                        "temperature": data["temperature"],
-                        "humidity": data["humidity"],
-                        "timestamp": iso_utc(),
-                        # "sensor": {"type": "DHT11", "pin": f"GP{pin}"},
-                    }
                     try:
-                        mqtt.publish_telemetry(payload)
+                        mqtt.publish_telemetry(data["temperature"], data["humidity"])
                     except Exception as e:
                         print("Publish-Fehler:", e)
                 else:
