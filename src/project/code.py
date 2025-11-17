@@ -1,6 +1,6 @@
 # ===================================================================
 # Haupt-Anwendung für das yourmuesli.at IoT Environmental Monitoring
-# Autor: Christian Vogel, Florian Eder, Anton Maurus
+# Autor: Christian Vogel, Florian Eder
 # Datum: 02.09.2025 (überarbeitet)
 # Hardware: Raspberry Pi Pico W
 # Sensor: DHT11 (Temperatur & Luftfeuchtigkeit)
@@ -15,10 +15,13 @@ import socketpool
 import adafruit_dht
 import adafruit_ntp
 import adafruit_minimqtt.adafruit_minimqtt as MQTT
+from adafruit_httpserver import Server, Request, Response, JSONResponse, GET, POST
 import toml
 import rtc
 import json
 import ssl
+import re
+import select
 
 # ============================== Config ==============================
 
@@ -33,6 +36,34 @@ class ConfigManager:
         except Exception as e:
             print("Fehler beim Laden der settings:", e)
             return {}
+    
+def update_interval_in_file(filepath: str, new_interval: int) -> bool:
+    """
+    Ersetzt/fuegt READING_INTERVAL_SECONDS in settings.toml.
+    Robuste Zeilenersetzung ohne toml.dumps-Abhaengigkeit.
+    """
+    try:
+        with open(filepath, "r") as f:
+            content = f.read()
+    except Exception:
+        content = ""
+
+    pattern = r'(?m)^\s*READING_INTERVAL_SECONDS\s*=\s*\d+\s*$'
+    line = f"READING_INTERVAL_SECONDS = {new_interval}"
+
+    if re.search(pattern, content):
+        new_content = re.sub(pattern, line, content)
+    else:
+        sep = "" if content.endswith("\n") or content == "" else "\n"
+        new_content = f"{content}{sep}{line}\n"
+
+    try:
+        with open(filepath, "w") as f:
+            f.write(new_content)
+        return True
+    except Exception as e:
+        print("Persistenz-Fehler:", e)
+        return False
 
 # ============================== Network =============================
 
@@ -124,6 +155,7 @@ class MqttClient:
     def loop(self, timeout: float = 0.5):
         # Regelmäßig aufrufen; hält Verbindung und verarbeitet acks
         self.client.loop(timeout)
+        
 
 # ============================== MAIN =================================
 
@@ -142,15 +174,15 @@ def main():
 
     cfg = ConfigManager("settings.toml").load_settings()
 
-    ssid         = cfg.get("CIRCUITPY_WIFI_SSID", "")
-    password     = cfg.get("CIRCUITPY_WIFI_PASSWORD", "")
-    broker       = cfg.get("MQTT_BROKER", "")
-    port         = int(cfg.get("MQTT_PORT", 1883))
-    username     = cfg.get("MQTT_USER", "")
-    mqtt_pass    = cfg.get("MQTT_PASSWORD", "")
-    client_id    = cfg.get("MQTT_CLIENT_ID", "Sensor")
-    base_topic   = cfg.get("MQTT_BASE_TOPIC", "iiot/test")
-    interval_s   = max(3, int(cfg.get("READING_INTERVAL_SECONDS", 30)))  # DHT11 >=2s
+    ssid       = cfg.get("CIRCUITPY_WIFI_SSID", "")
+    password   = cfg.get("CIRCUITPY_WIFI_PASSWORD", "")
+    broker     = cfg.get("MQTT_BROKER", "")
+    port       = int(cfg.get("MQTT_PORT", 1883))
+    username   = cfg.get("MQTT_USER", "")
+    mqtt_pass  = cfg.get("MQTT_PASSWORD", "")
+    client_id  = cfg.get("MQTT_CLIENT_ID", "Sensor")
+    base_topic = cfg.get("MQTT_BASE_TOPIC", "iiot/test")
+    interval_s = max(3, int(cfg.get("READING_INTERVAL_SECONDS", 30)))  # DHT11 >= 3s
 
     # physikalisch Pin 29 = GPIO22 (= board.GP22)
     pin = 22
@@ -169,61 +201,205 @@ def main():
     except Exception as e:
         print("NTP-Fehler:", e)
 
-    # Sensor & MQTT
+    # Sensor
     sensor = Sensor(pin)
-    mqtt = MqttClient(broker, port, username, mqtt_pass, client_id, base_topic, net.pool)
 
-    # Verbindungsaufbau + einfacher Reconnect-Versuch
-    for attempt in range(3):
-        try:
-            mqtt.connect()
-            break
-        except Exception as e:
-            print(f"MQTT-Verbindungsfehler (Versuch {attempt+1}/3):", e)
-            time.sleep(2)
-    else:
-        print("MQTT konnte nicht verbunden werden.")
-        return
+    mqtt = None  # für finally
+    try:
+        # MQTT
+        mqtt = MqttClient(broker, port, username, mqtt_pass, client_id, base_topic, net.pool)
 
-    print("Starte Hauptschleife… (Intervall:", interval_s, "s)")
-    led.value = True
-    last = 0.0
-
-    while True:
-        try:
-            mqtt.loop(1)
-        except Exception as e:
-            print("MQTT loop Fehler:", e)
-            # Kurz warten und nochmal verbinden
-            time.sleep(2)
+        # Verbindungsaufbau + einfacher Reconnect-Versuch
+        for attempt in range(3):
             try:
                 mqtt.connect()
-            except Exception as e2:
-                print("MQTT Reconnect fehlgeschlagen:", e2)
+                break
+            except Exception as e:
+                print(f"MQTT-Verbindungsfehler (Versuch {attempt+1}/3):", e)
+                time.sleep(2)
+        else:
+            print("MQTT konnte nicht verbunden werden.")
+            return
 
-        now = time.monotonic()
-        if now - last >= interval_s:
-            last = now
-            data = sensor.read_data()
-            if data:
-                payload = {
-                    #"client_id": client_id,
-                    #"ip": net.get_ip(),
-                    "temperature": data["temperature"],  # °C
-                    "humidity": data["humidity"],        # %rH
-                    #"timestamp": iso_utc(),              # ISO-8601 UTC
-                    #"sensor": {"type": "DHT11", "pin": f"GP{pin}"},
-                }
+        # Commands über MQTT abonnieren (als Alternative zu HTTP)
+        def setup_cmd_subscription():
+            cmd_topic = f"{mqtt.base}/{mqtt.client_id}/cmd"
+            def _on_message(client, topic, message):
                 try:
-                    mqtt.publish_telemetry(payload)
+                    msg = json.loads(message)
+                    if "interval" in msg:
+                        nonlocal interval_s
+                        new_i = max(3, int(msg["interval"]))
+                        interval_s = new_i
+                        state["interval_s"] = new_i
+                        if msg.get("persist"):
+                            update_interval_in_file("settings.toml", new_i)
+                        print("Intervall via MQTT gesetzt auf:", new_i)
                 except Exception as e:
-                    print("Publish-Fehler:", e)
-            else:
-                print("Sensorfehler/ungültige Messung")
-                # DHT11 zickt manchmal → LED flippen als Hinweis
-                led.value = not led.value
+                    print("CMD-Fehler:", e)
+            mqtt.client.on_message = _on_message
+            mqtt.client.subscribe(cmd_topic, qos=1)
+            print("Höre auf Commands:", cmd_topic)
 
-        time.sleep(0.2)
+        setup_cmd_subscription()
+
+        # --- HTTP-Server mit adafruit_httpserver ---
+        api_key = cfg.get("API_KEY", "") or None
+        SETTINGS_PATH = "settings.toml"
+
+        # Shared State für Routen
+        state = {"interval_s": interval_s}
+
+        server = Server(net.pool, debug=False)
+        server.headers = {"Access-Control-Allow-Origin": "*"}
+
+        # Für optionalen Sofort-Tick nach Änderung:
+        last = 0.0  # wird in der Loop genutzt
+
+        @server.route("/", GET)
+        def root(request: Request):
+            return Response(request, "OK", content_type="text/plain")
+
+        @server.route("/config", GET)
+        def get_config(request: Request):
+            return JSONResponse(request, {
+                "interval": state["interval_s"],
+                "timestamp": iso_utc(),
+            })
+
+        # Einfacher URL-Setter: /config/set?interval=20[&persist=1]
+        @server.route("/config/set", GET)
+        def set_config_via_query(request: Request):
+            nonlocal interval_s, last
+            if api_key and request.headers.get("x-api-key") != api_key:
+                return JSONResponse(request, {"error": "unauthorized"}, status=401)
+
+            qp = request.query_params or {}
+            if "interval" not in qp:
+                return JSONResponse(request, {"error": "missing 'interval'"}, status=400)
+
+            try:
+                new_interval = max(3, int(qp.get("interval", "0")))  # DHT11 >= 3s
+            except Exception:
+                return JSONResponse(request, {"error": "invalid 'interval'"}, status=400)
+
+            persist = str(qp.get("persist", "0")).lower() in ("1", "true", "yes", "on")
+
+            interval_s = new_interval
+            state["interval_s"] = new_interval
+
+            persisted = False
+            if persist:
+                persisted = update_interval_in_file(SETTINGS_PATH, new_interval)
+
+            # Sofortigen Tick auslösen (optional, hier aktiv)
+            last = 0.0
+
+            return JSONResponse(request, {
+                "ok": True,
+                "interval": new_interval,
+                "persisted": persisted,
+                "timestamp": iso_utc(),
+            })
+
+        # JSON-Setter: POST /config  { "interval": 20, "persist": true }
+        @server.route("/config", POST)
+        def set_config(request: Request):
+            nonlocal interval_s, last  # wir ändern das laufende Intervall
+            if api_key and request.headers.get("x-api-key") != api_key:
+                return JSONResponse(request, {"error": "unauthorized"}, status=401)
+
+            try:
+                payload = request.json()
+            except Exception:
+                return JSONResponse(request, {"error": "invalid json"}, status=400)
+
+            if not isinstance(payload, dict) or "interval" not in payload:
+                return JSONResponse(request, {"error": "missing 'interval'"}, status=400)
+
+            new_interval = int(payload.get("interval", state["interval_s"]))
+            persist = bool(payload.get("persist", False))
+
+            # DHT11 braucht >= 3s
+            new_interval = max(3, new_interval)
+
+            interval_s = new_interval
+            state["interval_s"] = new_interval
+
+            persisted = False
+            if persist:
+                persisted = update_interval_in_file(SETTINGS_PATH, new_interval)
+
+            # Sofortigen Tick auslösen (optional, hier aktiv)
+            last = 0.0
+
+            return JSONResponse(request, {
+                "ok": True,
+                "interval": new_interval,
+                "persisted": persisted,
+                "timestamp": iso_utc(),
+            })
+
+        try:
+            server.start(str(wifi.radio.ipv4_address), 8080)
+            print("REST-API lauscht auf :8080")
+        except Exception as e:
+            print("HTTP-Server Start fehlgeschlagen:", e)
+
+        print("Starte Hauptschleife… (Intervall:", interval_s, "s)")
+        led.value = True
+
+        while True:
+            # MQTT am Leben halten (Timeout >= socket_timeout)
+            try:
+                mqtt.loop(1.0)
+            except Exception as e:
+                print("MQTT loop Fehler:", e)
+                time.sleep(2)
+                try:
+                    mqtt.connect()
+                    setup_cmd_subscription()  # nach Reconnect erneut abonnieren
+                except Exception as e2:
+                    print("MQTT Reconnect fehlgeschlagen:", e2)
+
+            # HTTP-Server poll (non-blocking)
+            try:
+                server.poll()
+            except Exception:
+                pass
+
+            now = time.monotonic()
+            if now - last >= interval_s:
+                last = now
+                data = sensor.read_data()
+                if data:
+                    payload = {
+                        # "client_id": client_id,
+                        # "ip": net.get_ip(),
+                        "temperature": data["temperature"],
+                        "humidity": data["humidity"],
+                        "timestamp": iso_utc(),
+                        # "sensor": {"type": "DHT11", "pin": f"GP{pin}"},
+                    }
+                    try:
+                        mqtt.publish_telemetry(payload)
+                    except Exception as e:
+                        print("Publish-Fehler:", e)
+                else:
+                    print("Sensorfehler/ungültige Messung")
+                    led.value = not led.value
+
+            time.sleep(0.1)
+
+    finally:
+        # „sauberes“ Offline beim geordneten Beenden
+        try:
+            if mqtt:
+                mqtt.client.publish(mqtt.topic_status, "offline", retain=True, qos=1)
+                mqtt.client.disconnect()
+        except Exception:
+            pass
+
 
 try:
     main()
