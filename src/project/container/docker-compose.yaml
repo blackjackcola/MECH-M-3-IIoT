@@ -9,8 +9,8 @@ services:
       - "8086:8086"
     environment:
       DOCKER_INFLUXDB_INIT_MODE: setup
-      DOCKER_INFLUXDB_INIT_USERNAME: iot
-      DOCKER_INFLUXDB_INIT_PASSWORD: iot12345
+      DOCKER_INFLUXDB_INIT_USERNAME: ###
+      DOCKER_INFLUXDB_INIT_PASSWORD: ###
       DOCKER_INFLUXDB_INIT_ORG: yourmuesli.at
       DOCKER_INFLUXDB_INIT_BUCKET: iot_monitoring
       DOCKER_INFLUXDB_INIT_BUCKET_RETENTION: 0
@@ -29,8 +29,8 @@ services:
     volumes:
       - ./data/grafana:/var/lib/grafana
     environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin12345
+      - GF_SECURITY_ADMIN_USER=###
+      - GF_SECURITY_ADMIN_PASSWORD=###
 
   telegraf:
     image: telegraf:latest

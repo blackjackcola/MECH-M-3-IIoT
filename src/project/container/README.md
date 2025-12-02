@@ -32,15 +32,15 @@ InfluxDB
 
 Die Initial-Zugangsdaten kommen aus der docker-compose.yml, z. B.:
 
-Benutzername: iot
-Passwort: iot12345
-Organisation: yourmuesli.at
+Benutzername: ###
+Passwort: ###
+Organisation: ###
 Bucket: iot_monitoring
 Token: im Compose-File definiert (DOCKER_INFLUXDB_INIT_ADMIN_TOKEN)
 
 Grafana
-Benutzername: admin
-Passwort: admin
+Benutzername: ###
+Passwort: ###
 
 Persistente Speicherung
 
