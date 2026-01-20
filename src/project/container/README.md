@@ -9,6 +9,8 @@ Das Repository enthält einen containerisierten IoT-Monitoring-Stack bestehend a
 Der gesamte Stack wird über Docker Compose gestartet. Dabei werden die Dashboards und die Datasource automatisch für die Grafana-Visualisierung bereitgestellt.
 
 ## Projektstruktur
+
+```text
 /container
 ├── grafana/
 │    ├── dashboards/
@@ -46,4 +48,3 @@ Danach kann das docker compose gestartet oder gestoppt werden:
 ```bash
 docker compose up -d
 docker compose down -v
-```
