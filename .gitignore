@@ -9,4 +9,3 @@ settings.toml
 
 # User data (InfluxDB, Grafana, Telegraf)
 .env
-.env.example
