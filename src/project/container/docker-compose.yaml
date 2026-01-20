@@ -1,36 +1,45 @@
-version: "3.9"
-
 services:
   influxdb:
     image: influxdb:2.7
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f -H 'Authorization: Bearer ${INFLUXDB_TOKEN}' http://localhost:8086/health || exit 1"]
+      interval: 5s
+      timeout: 10s
+      retries: 5
     container_name: influxdb
     restart: unless-stopped
     ports:
-      - "8086:8086"
+      - "${INFLUXDB_PORT}:8086"
     environment:
-      DOCKER_INFLUXDB_INIT_MODE: setup
-      DOCKER_INFLUXDB_INIT_USERNAME: ###
-      DOCKER_INFLUXDB_INIT_PASSWORD: ###
-      DOCKER_INFLUXDB_INIT_ORG: yourmuesli.at
-      DOCKER_INFLUXDB_INIT_BUCKET: iot_monitoring
-      DOCKER_INFLUXDB_INIT_BUCKET_RETENTION: 0
-      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: GDLNye48_RhcT6Y1qKl4AjY7zm01XiHDpp9ijQM7fx9JHboygB9fWmtg-e_sjxEvb4Az3CjcdR7ENzBsebabdQ==  
+      DOCKER_INFLUXDB_INIT_MODE: ${INFLUXDB_MODE}
+      DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUXDB_USERNAME}
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUXDB_PASSWORD}
+      DOCKER_INFLUXDB_INIT_ORG: ${INFLUXDB_ORG}
+      DOCKER_INFLUXDB_INIT_BUCKET: ${INFLUXDB_BUCKET}
+      DOCKER_INFLUXDB_INIT_BUCKET_RETENTION: ${INFLUXDB_RETENTION}
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUXDB_TOKEN}
     volumes:
-      - ./data/influxdb:/var/lib/influxdb2
+      - influxdb_data:/var/lib/influxdb2
 
   grafana:
     image: grafana/grafana:latest
+    environment:
+      INFLUXDB_ORG: ${INFLUXDB_ORG}
+      INFLUXDB_BUCKET: ${INFLUXDB_BUCKET}
+      INFLUXDB_TOKEN: ${INFLUXDB_TOKEN}
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
     container_name: grafana
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "${GRAFANA_PORT}:3000"
     depends_on:
-      - influxdb
+      influxdb:
+        condition: service_healthy
     volumes:
-      - ./data/grafana:/var/lib/grafana
-    environment:
-      - GF_SECURITY_ADMIN_USER=###
-      - GF_SECURITY_ADMIN_PASSWORD=###
+      - grafana_data:/var/lib/grafana
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources
 
   telegraf:
     image: telegraf:latest
@@ -38,6 +47,19 @@ services:
     restart: unless-stopped
     depends_on:
       - influxdb
+    environment:
+      INFLUXDB_HOST: ${INFLUXDB_HOST}
+      INFLUXDB_TOKEN: ${INFLUXDB_TOKEN}
+      INFLUXDB_ORG: ${INFLUXDB_ORG}
+      INFLUXDB_BUCKET: ${INFLUXDB_BUCKET}
+      TELEGRAF_SERVERS: ${TELEGRAF_SERVERS}
+      TELEGRAF_CLIENT_ID: ${TELEGRAF_CLIENT_ID}
+      TELEGRAF_USERNAME: ${TELEGRAF_USERNAME}
+      TELEGRAF_PASSWORD: ${TELEGRAF_PASSWORD}
+      TELEGRAF_COLLECTION_INTERVAL: ${TELEGRAF_COLLECTION_INTERVAL}
     volumes:
-      - ./telegraf.conf:/etc/telegraf/telegraf.conf:ro
+      - ./telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
 
+volumes:
+  influxdb_data:
+  grafana_data:
