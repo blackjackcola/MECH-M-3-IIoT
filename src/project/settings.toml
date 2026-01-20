@@ -5,7 +5,7 @@ MQTT_BROKER = "158.180.44.197"
 MQTT_PORT = 1883
 MQTT_USER = "bobm"
 MQTT_PASSWORD = "letmein"
-MQTT_CLIENT_ID= "Sensor"
+MQTT_CLIENT_ID= "sensor-eder-maurus-vogel"
 MQTT_BASE_TOPIC = "iiot/group/eder-maurus-vogel"
 READING_INTERVAL_SECONDS = 10
 

@@ -1,7 +1,18 @@
+import sys
+import os
+print("CP:", sys.implementation)
+print("Board:", os.uname())
+
+import os
+print(os.listdir("/"))
+# falls du einen certs-Ordner hast:
+# print(os.listdir("/certs"))
+
+
 # ===================================================================
 # Haupt-Anwendung für das yourmuesli.at IoT Environmental Monitoring
-# Autor: Christian Vogel, Florian Eder
-# Datum: 02.09.2025 (überarbeitet)
+# Autor: Christian Vogel, Florian Eder, Anton Maurus
+# Datum: 19.01.2026 (überarbeitet)
 # Hardware: Raspberry Pi Pico W
 # Sensor: DHT11 (Temperatur & Luftfeuchtigkeit)
 # Software: CircuitPython
@@ -154,7 +165,7 @@ class MqttClient:
         self.client.connect()
         online_payload = json.dumps({
             "device_id": self.device_id,
-            "status": "online",
+            "status": "ok",
             "timestamp": iso_utc(),
         })
         self.client.publish(self.topic_status, online_payload, retain=True, qos=1)
@@ -165,13 +176,13 @@ class MqttClient:
         temp_msg = json.dumps({
             "device_id": self.device_id,
             "unit": "°C",
-            "value": f"{t:.1f}",        # als String, wie von dir gewünscht
+            "value": t,
             "timestamp": ts,
         })
         hum_msg = json.dumps({
             "device_id": self.device_id,
             "unit": "%",
-            "value": f"{h:.0f}",        # ganze %, bei Bedarf auf .1f ändern
+            "value": h,
             "timestamp": ts,
         })
         self.client.publish(self.topic_temp, temp_msg, qos=1, retain=False)
@@ -207,7 +218,7 @@ def main():
     port       = int(cfg.get("MQTT_PORT", 1883))
     username   = cfg.get("MQTT_USER", "")
     mqtt_pass  = cfg.get("MQTT_PASSWORD", "")
-    client_id  = cfg.get("MQTT_CLIENT_ID", "Sensor")
+    client_id  = cfg.get("MQTT_CLIENT_ID", "sensor")
     base_topic = cfg.get("MQTT_BASE_TOPIC", "iiot/test")
     interval_s = max(3, int(cfg.get("READING_INTERVAL_SECONDS", 30)))  # DHT11 >= 3s
 
@@ -414,7 +425,12 @@ def main():
         # „sauberes“ Offline beim geordneten Beenden
         try:
             if mqtt:
-                mqtt.client.publish(mqtt.topic_status, "offline", retain=True, qos=1)
+                will_payload = json.dumps({
+                    "device_id": self.device_id,
+                    "status": "offline",
+                    "timestamp": iso_utc(),  # Zeitpunkt der Verbindung
+                })
+                mqtt.client.publish(mqtt.topic_status, will_payload, retain=True, qos=1)
                 mqtt.client.disconnect()
         except Exception:
             pass
@@ -425,8 +441,13 @@ try:
 except Exception as e:
     print("Fehler:", e)
     try:
+        will_payload = json.dumps({
+            "device_id": self.device_id,
+            "status": "offline",
+            "timestamp": iso_utc(),  # Zeitpunkt der Verbindung
+        })
         # vor einem geordneten Disconnect explizit offline setzen
-        mqtt.client.publish(mqtt.topic_status, "offline", retain=True, qos=1)
+        mqtt.client.publish(mqtt.topic_status, will_payload, retain=True, qos=1)
         mqtt.client.disconnect()
     except Exception as _:
         pass
