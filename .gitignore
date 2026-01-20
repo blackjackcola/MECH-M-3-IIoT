@@ -6,3 +6,6 @@ __pycache__/
 /.quarto/
 _site/
 settings.toml
+
+# User data (InfluxDB, Grafana, Telegraf)
+.env
