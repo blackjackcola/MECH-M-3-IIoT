@@ -28,6 +28,7 @@ Der gesamte Stack wird über Docker Compose gestartet. Dabei werden die Dashboar
 1. .env.example dient als template die .env, welche für die Umgebungsvariablen verwendet wird.
 Zunächst müssen folgende Platzhalter mit den eigenen Werten gefüllt werden:
 
+```text
 # InfluxDB Configuration
 INFLUXDB_TOKEN=<Your_Superstrong_Token>
 INFLUXDB_PASSWORD=<Your_Password>
@@ -40,6 +41,7 @@ TELEGRAF_SERVERS=<Your_Server>
 TELEGRAF_CLIENT_ID=<Your_Client_ID>
 TELEGRAF_USERNAME=<Your_Username>
 TELEGRAF_PASSWORD=<Your_Password>
+```
 
 Anschließen muss das .env.example in .env umbenannt werden.
 
@@ -48,3 +50,4 @@ Danach kann das docker compose gestartet oder gestoppt werden:
 ```bash
 docker compose up -d
 docker compose down -v
+```
