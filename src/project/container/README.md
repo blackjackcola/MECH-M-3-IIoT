@@ -43,6 +43,7 @@ TELEGRAF_USERNAME=<Your_Username>
 TELEGRAF_PASSWORD=<Your_Password>
 ```
 
+passwort zwischen 8 und 72 zeichen
 Anschließen muss das .env.example in .env umbenannt werden.
 
 Danach kann das docker compose gestartet oder gestoppt werden:
