@@ -1,53 +1,49 @@
-# IoT Monitoring Stack – InfluxDB + Telegraf + Grafana
+# IoT Monitoring Container
 
 Das Repository enthält einen containerisierten IoT-Monitoring-Stack bestehend aus:
 
-- **Telegraf** – Datensammlung (z. B. via MQTT)
-- **InfluxDB 2.x** – Zeitreihen-Datenbank
-- **Grafana** – Visualisierung und Dashboards
+- **Telegraf** – Datensammlung
+- **InfluxDB 2.7** – Datenbank
+- **Grafana** – Visualisierung
 
-Der gesamte Stack wird über Docker Compose gestartet und speichert Daten und Dashboards persistent in lokalen Verzeichnissen.
+Der gesamte Stack wird über Docker Compose gestartet. Dabei werden die Dashboards und die Datasource automatisch für die Grafana-Visualisierung bereitgestellt.
 
 ## Projektstruktur
-
-├── docker-compose.yml
-├── telegraf.conf
-└── data/
-     ├── influxdb/
-     └── grafana/
+/container
+├── grafana/
+│    ├── dashboards/
+│    │    ├── dashboard.yaml
+│    │    └── IoT_Enviroment_Monitoring.json
+│    └── datasources/
+│         └── datasources.yaml
+├── telegraf/
+│    └── telegraf.conf
+├── docker-compose.yaml
+└── README.md
 
 ## Installation und Start
 
-Im Root-Verzeichnis des Projekts:
+1. .env.example dient als template die .env, welche für die Umgebungsvariablen verwendet wird.
+Zunächst müssen folgende Platzhalter mit den eigenen Werten gefüllt werden:
+
+# InfluxDB Configuration
+INFLUXDB_TOKEN=<Your_Superstrong_Token>
+INFLUXDB_PASSWORD=<Your_Password>
+
+# Grafana Configuration
+GRAFANA_ADMIN_PASSWORD=<Your_Password>
+
+# Telegraf Configuration
+TELEGRAF_SERVERS=<Your_Server>
+TELEGRAF_CLIENT_ID=<Your_Client_ID>
+TELEGRAF_USERNAME=<Your_Username>
+TELEGRAF_PASSWORD=<Your_Password>
+
+Anschließen muss das .env.example in .env umbenannt werden.
+
+Danach kann das docker compose gestartet oder gestoppt werden:
 
 ```bash
 docker compose up -d
-Nach dem Start stehen folgende Dienste bereit:
-
-- InfluxDB: http://localhost:8086
-- Grafana: http://localhost:3000
-
-Zugangsdaten
-InfluxDB
-
-Die Initial-Zugangsdaten kommen aus der docker-compose.yml, z. B.:
-
-Benutzername: ###
-Passwort: ###
-Organisation: ###
-Bucket: iot_monitoring
-Token: im Compose-File definiert (DOCKER_INFLUXDB_INIT_ADMIN_TOKEN)
-
-Grafana
-Benutzername: ###
-Passwort: ###
-
-Persistente Speicherung
-
-Die Docker-Container nutzen lokale Ordner zur dauerhaften Speicherung:
-
-./data/influxdb:/var/lib/influxdb2
-./data/grafana:/var/lib/grafana
-
-Dienste stoppen
-docker compose down
+docker compose down -v
+```
