@@ -164,3 +164,301 @@ Unter `Edit` des jeweiligen Fensters und anschließendes Bearbeiten der im Bild 
 ![Settings](container/data/Settings.png)
 
 ---
+
+# MQTT, HTTP-API, Tests with Swagger Codegen 
+
+## Software & Tooling
+- CircuitPython  
+- adafruit_httpserver  
+- adafruit_minimqtt  
+- MQTT Broker  
+- Docker  
+- OpenAPI 3  
+- Swagger Codegen
+- pytest  
+
+---
+
+## Device Configuration (`settings.toml`)
+
+```toml
+CIRCUITPY_WIFI_SSID = "..."
+CIRCUITPY_WIFI_PASSWORD = "..."
+
+MQTT_BROKER = "..."
+MQTT_PORT = 1883
+MQTT_USER = "..."
+MQTT_PASSWORD = "..."
+
+MQTT_CLIENT_ID = "sensor"
+MQTT_BASE_TOPIC = "iiot/group/eder-maurus-vogel"
+
+READING_INTERVAL_SECONDS = 10
+```
+
+Optional API protection:
+```toml
+API_KEY = "mySecretKey"
+```
+
+---
+
+## MQTT Interface
+
+### MQTT Topics
+
+| Purpose        | Topic |
+|---------------|-------|
+| Device status | `iiot/group/eder-maurus-vogel/sensor/status` |
+| Temperature   | `iiot/group/eder-maurus-vogel/sensor/temperature` |
+| Humidity      | `iiot/group/eder-maurus-vogel/sensor/humidity` |
+| Commands      | `iiot/group/eder-maurus-vogel/sensor/cmd` |
+
+---
+
+### MQTT Payloads
+
+#### Status Message
+
+```json
+{
+  "device_id": "sensor",
+  "status": "ok",
+  "timestamp": "2026-01-22T12:00:00Z"
+}
+```
+
+Offline:
+
+```json
+{
+  "device_id": "sensor",
+  "status": "offline",
+  "timestamp": "2026-01-22T12:30:00Z"
+}
+```
+
+---
+
+#### Temperature Telemetry
+
+```json
+{
+  "device_id": "sensor",
+  "unit": "°C",
+  "value": 22.0,
+  "timestamp": "2026-01-22T12:01:00Z"
+}
+```
+
+#### Humidity Telemetry
+
+```json
+{
+  "device_id": "sensor",
+  "unit": "%",
+  "value": 45.0,
+  "timestamp": "2026-01-22T12:01:00Z"
+}
+```
+
+---
+
+## HTTP REST API
+
+**Base URL**
+```
+http://<DEVICE_IP>:8080
+```
+
+Example:
+```
+http://<DEVICE_IP>:8080
+```
+
+---
+
+### HTTP Endpoints Overview
+
+| Method | Endpoint | Description |
+|------|---------|-------------|
+| GET  | `/` | Health check |
+| GET  | `/config` | Get configuration |
+| POST | `/config` | Update configuration |
+| GET  | `/config/set` | Update configuration via query |
+| GET  | `/status` | Device status and last readings |
+
+---
+
+## GET `/` – Health Check
+
+### HTTP Request
+```
+GET / HTTP/1.1
+```
+
+### curl
+```bash
+curl http://<DEVICE_IP>:8080/
+```
+
+### Response
+```
+OK
+```
+
+---
+
+## GET `/config`
+
+### curl
+```bash
+curl http://<DEVICE_IP>:8080/config
+```
+
+### Response
+```json
+{
+  "interval": 10,
+  "timestamp": "2026-01-22T12:05:00Z"
+}
+```
+
+---
+
+## POST `/config`
+
+### HTTP Request
+```
+POST /config HTTP/1.1
+Content-Type: application/json
+x-api-key: mySecretKey
+```
+
+### JSON Body
+```json
+{
+  "interval": 20,
+  "persist": true
+}
+```
+
+### curl
+```bash
+curl -X POST http://<DEVICE_IP>:8080/config   -H "Content-Type: application/json"   -H "x-api-key: mySecretKey"   -d '{"interval":20,"persist":true}'
+```
+
+---
+
+## GET `/config/set`
+
+### curl
+```bash
+curl "http://<DEVICE_IP>:8080/config/set?interval=15&persist=1"
+```
+
+---
+
+## GET `/status`
+
+### curl
+```bash
+curl http://<DEVICE_IP>:8080/status
+```
+
+### Response
+```json
+{
+  "device_id": "sensor",
+  "uptime_s": 1234,
+  "wifi": {
+    "connected": true,
+    "ip": "<DEVICE_IP>"
+  },
+  "mqtt": {
+    "connected": true,
+    "base_topic": "iiot/group/eder-maurus-vogel"
+  },
+  "config": {
+    "interval_s": 20
+  },
+  "last_sensor": {
+    "temperature": 22.0,
+    "humidity": 45.0
+  }
+}
+```
+
+---
+
+## OpenAPI & Swagger Testing
+
+### Step 1 – OpenAPI Specification
+The API is defined using **OpenAPI 3** (`openapi.yaml`).
+
+Swagger Codegen requires **Swagger 2**, therefore conversion is necessary.
+
+---
+
+### Step 2 – Convert OpenAPI → Swagger 2
+
+```powershell
+docker run --rm -v "${pwd}:/tmp" -e OPENAPI_FILE=openapi.yaml rdkls/openapi2swagger |
+  Set-Content -Encoding utf8 swagger2.json
+```
+
+---
+
+### Step 3 – Generate Client with Swagger Codegen
+
+```powershell
+docker run --rm -v "${pwd}:/local" swaggerapi/swagger-codegen-cli generate   -i /local/swagger2.json   -l python   -o /local/generated/swagger-python-client
+```
+
+---
+
+### Step 4 – Install Generated Client
+
+```powershell
+cd generated/swagger-python-client
+python -m pip install -r requirements.txt
+python -m pip install -e .
+cd ../..
+```
+
+---
+
+## Automated HTTP API Tests (pytest)
+
+### Environment Variables
+
+```powershell
+$env:PICO_HOST="<DEVICE_IP>"
+$env:PICO_PORT="8080"
+# optional:
+# $env:PICO_API_KEY="mySecretKey"
+```
+
+### Run Tests
+
+```powershell
+pytest -q
+```
+
+### Result
+
+```
+In our case
+19 passed in 7.43s
+```
+
+---
+
+## Conclusion of MQTT and HTTP API
+- MQTT telemetry and status reporting implemented
+- REST API with GET/POST endpoints fully documented
+- JSON payloads clearly defined
+- OpenAPI specification provided
+- Swagger Codegen used to generate test client
+- Automated tests executed successfully
+
