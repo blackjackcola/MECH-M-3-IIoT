@@ -1,0 +1,237 @@
+openapi: 3.0.3
+info:
+  title: Pico W Environmental Monitoring HTTP API
+  version: 1.0.0
+  description: |
+    REST API for configuration and device status.
+servers:
+  - url: http://{host}:{port}
+    variables:
+      host:
+        default: 192.168.1.50
+        description: Device IP address
+      port:
+        default: "8080"
+        description: HTTP port
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: x-api-key
+
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+
+    ConfigResponse:
+      type: object
+      properties:
+        interval:
+          type: integer
+          minimum: 3
+        timestamp:
+          type: string
+          format: date-time
+      required: [interval, timestamp]
+
+    ConfigSetRequest:
+      type: object
+      properties:
+        interval:
+          type: integer
+          minimum: 3
+        persist:
+          type: boolean
+      required: [interval]
+
+    ConfigSetResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        interval:
+          type: integer
+          minimum: 3
+        persisted:
+          type: boolean
+        timestamp:
+          type: string
+          format: date-time
+      required: [ok, interval, persisted, timestamp]
+
+    ReadingSnapshot:
+      type: object
+      nullable: true
+      properties:
+        temperature:
+          type: number
+        humidity:
+          type: number
+        timestamp:
+          type: string
+          format: date-time
+      required: [temperature, humidity, timestamp]
+
+    StatusResponse:
+      type: object
+      properties:
+        device_id:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        uptime_s:
+          type: integer
+          minimum: 0
+        wifi:
+          type: object
+          properties:
+            connected:
+              type: boolean
+            ip:
+              type: string
+            ssid:
+              type: string
+              nullable: true
+          required: [connected, ip]
+        mqtt:
+          type: object
+          properties:
+            connected:
+              type: boolean
+            broker:
+              type: string
+              nullable: true
+            port:
+              type: integer
+            base_topic:
+              type: string
+          required: [connected, port, base_topic]
+        config:
+          type: object
+          properties:
+            interval_s:
+              type: integer
+              minimum: 3
+          required: [interval_s]
+        last_sensor:
+          $ref: "#/components/schemas/ReadingSnapshot"
+        last_published:
+          $ref: "#/components/schemas/ReadingSnapshot"
+      required: [device_id, timestamp, uptime_s, wifi, mqtt, config, last_sensor, last_published]
+
+paths:
+  /:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: OK
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: OK
+
+  /config:
+    get:
+      summary: Get current configuration
+      responses:
+        "200":
+          description: Current configuration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfigResponse"
+
+    post:
+      summary: Set configuration
+      description: Sets the reading interval; optionally persists to settings.toml.
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfigSetRequest"
+            examples:
+              setInterval:
+                value:
+                  interval: 20
+                  persist: true
+      responses:
+        "200":
+          description: Configuration updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfigSetResponse"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized (API key required)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /config/set:
+    get:
+      summary: Set configuration via query params
+      description: Convenience endpoint to set interval via query string.
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - in: query
+          name: interval
+          required: true
+          schema:
+            type: integer
+            minimum: 3
+        - in: query
+          name: persist
+          required: false
+          schema:
+            type: string
+            enum: ["0","1","true","false","yes","no","on","off"]
+      responses:
+        "200":
+          description: Configuration updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfigSetResponse"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized (API key required)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /status:
+    get:
+      summary: Get current device status
+      responses:
+        "200":
+          description: Device status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusResponse"

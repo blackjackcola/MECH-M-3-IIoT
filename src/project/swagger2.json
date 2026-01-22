@@ -1,0 +1,340 @@
+﻿{
+  "swagger": "2.0",
+  "info": {
+    "description": "REST API for configuration and device status.\n",
+    "title": "Pico W Environmental Monitoring HTTP API",
+    "version": "1.0.0"
+  },
+  "host": "{host}:{port}",
+  "basePath": "/",
+  "schemes": [
+    "http"
+  ],
+  "paths": {
+    "/": {
+      "get": {
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "examples": {
+              "text/plain": "OK"
+            },
+            "schema": {
+              "type": "string"
+            }
+          }
+        },
+        "summary": "Health check"
+      }
+    },
+    "/config": {
+      "get": {
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Current configuration",
+            "schema": {
+              "$ref": "#/definitions/ConfigResponse"
+            }
+          }
+        },
+        "summary": "Get current configuration"
+      },
+      "post": {
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/ConfigSetRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Configuration updated",
+            "schema": {
+              "$ref": "#/definitions/ConfigSetResponse"
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized (API key required)",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "description": "Sets the reading interval; optionally persists to settings.toml.",
+        "summary": "Set configuration"
+      }
+    },
+    "/config/set": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "minimum": 3,
+            "name": "interval",
+            "required": true,
+            "type": "integer"
+          },
+          {
+            "enum": [
+              "0",
+              "1",
+              "true",
+              "false",
+              "yes",
+              "no",
+              "on",
+              "off"
+            ],
+            "in": "query",
+            "name": "persist",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Configuration updated",
+            "schema": {
+              "$ref": "#/definitions/ConfigSetResponse"
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized (API key required)",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "description": "Convenience endpoint to set interval via query string.",
+        "summary": "Set configuration via query params"
+      }
+    },
+    "/status": {
+      "get": {
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Device status",
+            "schema": {
+              "$ref": "#/definitions/StatusResponse"
+            }
+          }
+        },
+        "summary": "Get current device status"
+      }
+    }
+  },
+  "definitions": {
+    "ConfigResponse": {
+      "properties": {
+        "interval": {
+          "minimum": 3,
+          "type": "integer"
+        },
+        "timestamp": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "interval",
+        "timestamp"
+      ],
+      "type": "object"
+    },
+    "ConfigSetRequest": {
+      "properties": {
+        "interval": {
+          "minimum": 3,
+          "type": "integer"
+        },
+        "persist": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "interval"
+      ],
+      "type": "object"
+    },
+    "ConfigSetResponse": {
+      "properties": {
+        "interval": {
+          "minimum": 3,
+          "type": "integer"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "persisted": {
+          "type": "boolean"
+        },
+        "timestamp": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "interval",
+        "persisted",
+        "timestamp"
+      ],
+      "type": "object"
+    },
+    "ErrorResponse": {
+      "properties": {
+        "error": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "error"
+      ],
+      "type": "object"
+    },
+    "ReadingSnapshot": {
+      "nullable": true,
+      "properties": {
+        "humidity": {
+          "type": "number"
+        },
+        "temperature": {
+          "type": "number"
+        },
+        "timestamp": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "temperature",
+        "humidity",
+        "timestamp"
+      ],
+      "type": "object"
+    },
+    "StatusResponse": {
+      "properties": {
+        "config": {
+          "properties": {
+            "interval_s": {
+              "minimum": 3,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "interval_s"
+          ],
+          "type": "object"
+        },
+        "device_id": {
+          "type": "string"
+        },
+        "last_published": {
+          "$ref": "#/definitions/ReadingSnapshot"
+        },
+        "last_sensor": {
+          "$ref": "#/definitions/ReadingSnapshot"
+        },
+        "mqtt": {
+          "properties": {
+            "base_topic": {
+              "type": "string"
+            },
+            "broker": {
+              "nullable": true,
+              "type": "string"
+            },
+            "connected": {
+              "type": "boolean"
+            },
+            "port": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "connected",
+            "port",
+            "base_topic"
+          ],
+          "type": "object"
+        },
+        "timestamp": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "uptime_s": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "wifi": {
+          "properties": {
+            "connected": {
+              "type": "boolean"
+            },
+            "ip": {
+              "type": "string"
+            },
+            "ssid": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          "required": [
+            "connected",
+            "ip"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "device_id",
+        "timestamp",
+        "uptime_s",
+        "wifi",
+        "mqtt",
+        "config",
+        "last_sensor",
+        "last_published"
+      ],
+      "type": "object"
+    }
+  },
+  "securityDefinitions": {
+    "ApiKeyAuth": {
+      "in": "header",
+      "name": "x-api-key",
+      "type": "apiKey"
+    }
+  },
+  "x-components": {}
+}
